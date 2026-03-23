@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能物料搬运系统</title>
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --color-bg: #0B0F18;
+            --color-primary: #4A90D9;
+            --color-primary-hover: #5A9FE8;
+            --color-text: #E0E6ED;
+            --color-text-secondary: #7A8494;
+            --color-ice-white: #E8EFF8;
+            --glass-bg: rgba(255,255,255,0.04);
+            --glass-bg-hover: rgba(255,255,255,0.07);
+            --glass-border: rgba(255,255,255,0.08);
+            --glass-border-focus: rgba(74,144,217,0.5);
+            --glass-blur: blur(16px);
+            --glass-shadow: 0 4px 24px rgba(0,0,0,0.3);
+            --radius-lg: 12px;
+            --radius-md: 8px;
+            --radius-sm: 4px;
+            --transition-fast: 150ms ease;
+            --nav-height: 60px;
+            --sidebar-width: 220px;
+            --sidebar-collapsed: 64px;
+            --color-success: #52c41a;
+            --color-error: #f5222d;
+            --color-warning: #faad14;
+            --color-info: #4A90D9;
+            --color-orange: #fa8c16;
+            --color-cyan: #13c2c2;
+            --color-gray: #8c8c8c;
+            /* 侧栏导航选中态（紫色，与主色区分） */
+            --color-nav-active: #A78BFA;
+            --color-nav-active-bg: rgba(139, 92, 246, 0.12);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background-color: var(--color-bg);
+            background-image:
+                linear-gradient(180deg, rgba(11, 15, 24, 0.22) 0%, rgba(11, 15, 24, 0.35) 100%),
+                url('lain1.jpg');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+            color: var(--color-text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ── Top Navigation ── */
+        .top-nav {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            height: var(--nav-height);
+            background: rgba(15, 20, 35, 0.75);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            z-index: 1000;
+        }
+
+        .top-nav-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .sidebar-toggle {
+            width: 36px; height: 36px;
+            background: transparent;
+            border: none;
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background var(--transition-fast), color var(--transition-fast);
+        }
+        .sidebar-toggle:hover {
+            background: rgba(255,255,255,0.06);
+            color: var(--color-text);
+        }
+
+        .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .logo-icon {
+            width: 32px; height: 32px;
+            color: var(--color-nav-active);
+        }
+        .logo-text {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--color-text);
+            letter-spacing: 0.5px;
+        }
+
+        .sim-banner {
+            background: rgba(250,140,22,0.12);
+            color: var(--color-orange);
+            font-size: 14px;
+            padding: 4px 12px;
+            border-radius: var(--radius-sm);
+            margin-left: 16px;
+        }
+
+        .top-nav-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .nav-btn {
+            background: transparent;
+            border: none;
+            color: var(--color-text-secondary);
+            padding: 6px 12px;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            font-size: 14px;
+            transition: background var(--transition-fast), color var(--transition-fast);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .nav-btn:hover {
+            background: rgba(255,255,255,0.06);
+            color: var(--color-text);
+        }
+
+        .ws-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .ws-dot.connected {
+            background: var(--color-success);
+            box-shadow: 0 0 4px var(--color-success);
+        }
+        .ws-dot.disconnected {
+            background: var(--color-error);
+            box-shadow: 0 0 4px var(--color-error);
+        }
+
+        .lang-switch {
+            font-size: 14px;
+            padding: 4px 10px;
+        }
+
+        .user-info {
+            font-size: 14px;
+            color: var(--color-text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* ── Sidebar ── */
+        .sidebar {
+            position: fixed;
+            top: var(--nav-height);
+            left: 0;
+            bottom: 0;
+            width: var(--sidebar-width);
+            background: rgba(15, 20, 35, 0.6);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border-right: 1px solid rgba(255,255,255,0.06);
+            padding: 12px 0;
+            z-index: 999;
+            transition: width 200ms ease;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        .sidebar.collapsed {
+            width: var(--sidebar-collapsed);
+        }
+
+        .sidebar::-webkit-scrollbar { width: 4px; }
+        .sidebar::-webkit-scrollbar-track { background: transparent; }
+        .sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+
+        .menu-section-title {
+            font-size: 14px;
+            color: var(--color-text-secondary);
+            padding: 16px 20px 6px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+        .sidebar.collapsed .menu-section-title { opacity: 0; height: 0; padding: 0; }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 20px;
+            cursor: pointer;
+            color: var(--color-text-secondary);
+            text-decoration: none;
+            border-radius: 0;
+            position: relative;
+            transition: background var(--transition-fast), color var(--transition-fast);
+            white-space: nowrap;
+        }
+        .menu-item:hover {
+            background: rgba(255,255,255,0.04);
+            color: var(--color-text);
+        }
+        .menu-item.active {
+            color: var(--color-nav-active);
+            background: var(--color-nav-active-bg);
+        }
+        .menu-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 4px;
+            bottom: 4px;
+            width: 2px;
+            background: var(--color-nav-active);
+            border-radius: 0 1px 1px 0;
+        }
+
+        .menu-icon {
+            width: 20px; height: 20px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .menu-icon svg {
+            width: 18px; height: 18px;
+        }
+
+        .menu-label {
+            font-size: 15px;
+            overflow: hidden;
+            transition: opacity 200ms ease;
+        }
+        .sidebar.collapsed .menu-label { opacity: 0; width: 0; }
+        .sidebar.collapsed .menu-item { justify-content: center; padding: 10px 0; }
+
+        /* ── Main Content ── */
+        .main-content {
+            margin-top: var(--nav-height);
+            margin-left: var(--sidebar-width);
+            padding: 24px;
+            min-height: calc(100vh - var(--nav-height));
+            transition: margin-left 200ms ease;
+        }
+        .sidebar.collapsed ~ .main-content,
+        .main-content.sidebar-collapsed {
+            margin-left: var(--sidebar-collapsed);
+        }
+
+        /* 监控总览：次要文字加深对比（仅主页 .dashboard 作用域） */
+        .dashboard {
+            --color-text-secondary: #A8B2BE;
+        }
+
+        /* ── Glass Card ── */
+        .glass-card {
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--glass-shadow);
+            transition: background var(--transition-fast);
+        }
+        .glass-card:hover {
+            background: var(--glass-bg-hover);
+        }
+
+        /* ── KPI Cards ── */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        @media (max-width: 1439px) {
+            .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+        @media (max-width: 1023px) {
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        .kpi-card {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .kpi-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .kpi-icon {
+            width: 40px; height: 40px;
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .kpi-icon svg { width: 22px; height: 22px; }
+        .kpi-change {
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        .kpi-change.up { color: #52c41a; }
+        .kpi-change.down { color: #f5222d; }
+        .kpi-value {
+            font-size: 28px;
+            font-weight: 600;
+            color: var(--color-text);
+            line-height: 1.2;
+        }
+        .kpi-label {
+            font-size: 15px;
+            color: var(--color-text-secondary);
+        }
+
+        /* ── Charts Grid ── */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        @media (max-width: 1023px) {
+            .charts-grid { grid-template-columns: 1fr; }
+        }
+
+        .chart-card {
+            padding: 20px;
+        }
+        .chart-title {
+            font-size: 15px;
+            font-weight: 500;
+            color: var(--color-text);
+            margin-bottom: 16px;
+        }
+        .chart-container {
+            width: 100%;
+            height: 260px;
+        }
+
+        /* ── Events List ── */
+        .events-card {
+            padding: 20px;
+        }
+        .events-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        .events-title {
+            font-size: 15px;
+            font-weight: 500;
+            color: var(--color-text);
+        }
+
+        .event-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: var(--radius-md);
+            transition: background var(--transition-fast);
+            cursor: default;
+        }
+        .event-row:hover {
+            background: rgba(255,255,255,0.03);
+        }
+        .event-row + .event-row {
+            border-top: 1px solid rgba(255,255,255,0.04);
+        }
+
+        .event-badge {
+            padding: 2px 8px;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+        .event-badge.error {
+            background: rgba(245,34,45,0.12);
+            color: #f5222d;
+        }
+        .event-badge.warning {
+            background: rgba(250,173,20,0.12);
+            color: #faad14;
+        }
+        .event-badge.info {
+            background: rgba(74,144,217,0.12);
+            color: #4A90D9;
+        }
+
+        .event-message {
+            flex: 1;
+            font-size: 15px;
+            color: var(--color-text);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .event-time {
+            font-size: 14px;
+            color: var(--color-text-secondary);
+            flex-shrink: 0;
+        }
+        .event-agv {
+            font-size: 14px;
+            color: var(--color-primary);
+            flex-shrink: 0;
+            font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+        }
+
+        /* ── Page Title ── */
+        .page-title-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+        }
+        .page-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--color-text);
+        }
+        .page-subtitle {
+            font-size: 15px;
+            color: var(--color-text-secondary);
+            margin-top: 2px;
+        }
+
+        /* ── Pulse animation for data update ── */
+        @keyframes dataPulse {
+            0% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .data-pulse {
+            animation: dataPulse 180ms ease-out;
+        }
+
+        /* ── Scrollbar ── */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+
+        /* ── View More Link ── */
+        .view-more {
+            font-size: 15px;
+            color: var(--color-primary);
+            text-decoration: none;
+            cursor: pointer;
+            transition: color var(--transition-fast);
+        }
+        .view-more:hover {
+            color: var(--color-primary-hover);
+            text-decoration: underline;
+        }
+
+        /* ── Map View ── */
+        .map-page {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            /* 与监控总览 .dashboard 一致，次要文字更易读 */
+            --color-text-secondary: #A8B2BE;
+        }
+        .map-page-title {
+            margin-bottom: 0;
+        }
+        .map-page-meta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+            color: var(--color-text-secondary);
+        }
+        .map-connection-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(255,255,255,0.08);
+            font-size: 13px;
+        }
+        .map-connection-pill.is-simulation,
+        .map-connection-pill.is-connected {
+            color: var(--color-success);
+            background: rgba(82,196,26,0.12);
+            border-color: rgba(82,196,26,0.24);
+        }
+        .map-connection-pill.is-connecting,
+        .map-connection-pill.is-reconnecting,
+        .map-connection-pill.is-polling {
+            color: var(--color-orange);
+            background: rgba(250,140,22,0.12);
+            border-color: rgba(250,140,22,0.24);
+        }
+        .map-connection-pill.is-disconnected {
+            color: var(--color-error);
+            background: rgba(245,34,45,0.12);
+            border-color: rgba(245,34,45,0.24);
+        }
+        .map-scene-shell {
+            position: relative;
+            height: calc(100vh - var(--nav-height) - 140px);
+            min-height: 620px;
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 18px;
+            overflow: hidden;
+            box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+        }
+        .map-viewport {
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+        .map-viewport canvas {
+            display: block;
+            background: transparent;
+        }
+        .map-viewport:active {
+            cursor: grabbing;
+        }
+        .map-toolbar,
+        .map-legend,
+        .map-tooltip,
+        .map-toast {
+            position: absolute;
+            z-index: 3;
+        }
+        .map-toolbar {
+            left: 20px;
+            bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+        }
+        .map-action-btn {
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.04);
+            color: var(--color-text);
+            border-radius: var(--radius-md);
+            padding: 10px 14px;
+            cursor: pointer;
+            transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+        }
+        .map-action-btn:hover {
+            background: rgba(255,255,255,0.08);
+            border-color: rgba(255,255,255,0.14);
+            transform: translateY(-1px);
+        }
+        .map-action-btn.primary {
+            background: rgba(74,144,217,0.18);
+            border-color: rgba(74,144,217,0.28);
+            color: var(--color-ice-white);
+        }
+        .map-legend {
+            right: 20px;
+            top: 20px;
+            width: 260px;
+            padding: 16px;
+        }
+        .map-legend-title {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--color-text);
+        }
+        .map-legend-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .map-legend-item {
+            display: grid;
+            grid-template-columns: 10px 1fr auto;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            color: var(--color-text-secondary);
+        }
+        .map-status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(255,255,255,0.08);
+        }
+        .map-legend-count {
+            color: var(--color-text);
+            font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+        }
+        .map-legend-hint {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            font-size: 13px;
+            line-height: 1.5;
+            color: var(--color-text-secondary);
+        }
+        .map-tooltip {
+            min-width: 220px;
+            max-width: 240px;
+            padding: 14px;
+            pointer-events: none;
+        }
+        .map-tooltip-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .map-tooltip-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--color-text);
+        }
+        .map-tooltip-subtitle {
+            margin-top: 4px;
+            font-size: 12px;
+            color: var(--color-text-secondary);
+        }
+        .map-status-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 8px;
+            min-width: 56px;
+            border-radius: var(--radius-sm);
+            border: 1px solid transparent;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .map-tooltip-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            font-size: 13px;
+            color: var(--color-text-secondary);
+            margin-bottom: 8px;
+        }
+        .map-tooltip-row strong {
+            color: var(--color-text);
+            font-weight: 500;
+            text-align: right;
+        }
+        .map-battery-track {
+            height: 6px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+        .map-battery-fill {
+            height: 100%;
+            border-radius: inherit;
+        }
+        .map-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(6,10,16,0.48);
+            z-index: 4;
+        }
+        .map-overlay-card {
+            width: min(360px, calc(100% - 40px));
+            padding: 24px;
+            border-radius: 16px;
+            background: rgba(15,20,35,0.88);
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 16px 40px rgba(0,0,0,0.35);
+            text-align: center;
+        }
+        .map-overlay-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--color-text);
+        }
+        .map-overlay-text {
+            margin: 10px 0 18px;
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--color-text-secondary);
+        }
+        .map-toast {
+            left: 50%;
+            bottom: 20px;
+            transform: translateX(-50%);
+            padding: 12px 16px;
+            font-size: 14px;
+            color: var(--color-text);
+            z-index: 5;
+            white-space: nowrap;
+        }
+        @media (max-width: 1023px) {
+            .map-page-meta {
+                flex-wrap: wrap;
+                justify-content: flex-end;
+            }
+            .map-scene-shell {
+                height: calc(100vh - var(--nav-height) - 132px);
+                min-height: 540px;
+            }
+            .map-legend {
+                width: 220px;
+            }
+        }
+        @media (max-width: 767px) {
+            .map-page-title {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+            }
+            .map-page-meta {
+                justify-content: flex-start;
+            }
+            .map-toolbar {
+                left: 12px;
+                right: 12px;
+                bottom: 12px;
+                justify-content: stretch;
+            }
+            .map-action-btn {
+                flex: 1;
+            }
+            .map-legend {
+                right: 12px;
+                top: 12px;
+                width: calc(100% - 24px);
+            }
+            .map-tooltip {
+                max-width: calc(100% - 24px);
+            }
+        }
+
+        /* ── AGV Detail ── */
+        .agv-detail-page {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            --color-text-secondary: #A8B2BE;
+        }
+        .agv-page-title {
+            margin-bottom: 0;
+        }
+        .agv-page-meta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            font-size: 14px;
+            color: var(--color-text-secondary);
+        }
+        .agv-meta-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.04);
+            color: var(--color-text);
+        }
+        .agv-detail-layout {
+            position: relative;
+            display: grid;
+            grid-template-columns: minmax(520px, 1.2fr) minmax(380px, 0.92fr);
+            gap: 16px;
+            align-items: stretch;
+        }
+        .agv-model-panel,
+        .agv-info-card {
+            background: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 16px 48px rgba(0,0,0,0.28);
+        }
+        .agv-model-panel {
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            min-height: 700px;
+            background: transparent;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+            border: none;
+            box-shadow: none;
+        }
+        .agv-model-panel.glass-card:hover:has(.agv-model-shell:hover) {
+            background: transparent !important;
+        }
+        .agv-panel-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 0 6px;
+        }
+        .agv-panel-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--color-text);
+        }
+        .agv-panel-subtitle {
+            margin-top: 4px;
+            font-size: 13px;
+            color: var(--color-text-secondary);
+        }
+        .agv-model-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-left: auto;
+        }
+        .agv-model-actions .map-action-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .agv-model-shell {
+            position: relative;
+            flex: 1;
+            min-height: 560px;
+            overflow: visible;
+            border-radius: 0;
+            border: none;
+            background: transparent;
+            box-shadow: none;
+        }
+        .agv-model-viewport {
+            width: 100%;
+            height: 100%;
+        }
+        .agv-model-viewport canvas {
+            display: block;
+            background: transparent !important;
+        }
+        .agv-scene-note,
+        .agv-hover-tag {
+            position: absolute;
+            z-index: 3;
+        }
+        .agv-scene-note {
+            top: 16px;
+            left: 16px;
+            padding: 10px 14px;
+            max-width: 320px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .agv-hover-tag {
+            padding: 8px 12px;
+            border-radius: 999px;
+            white-space: nowrap;
+            pointer-events: none;
+            font-size: 13px;
+            color: var(--color-text);
+        }
+        .agv-component-legend {
+            padding: 10px 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            width: fit-content;
+            max-width: 100%;
+            margin-left: auto;
+            margin-bottom: 16px;
+        }
+        .agv-legend-title {
+            font-size: 13px;
+            color: var(--color-text-secondary);
+            margin-right: 4px;
+        }
+        .agv-legend-chip {
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.04);
+            color: var(--color-text-secondary);
+            padding: 8px 12px;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+        .agv-legend-chip:hover,
+        .agv-legend-chip.active {
+            color: var(--color-text);
+            border-color: rgba(74,144,217,0.36);
+            background: rgba(74,144,217,0.16);
+            box-shadow: 0 0 20px rgba(74,144,217,0.15);
+        }
+        .agv-info-panel {
+            position: relative;
+            min-height: 560px;
+            overflow: visible;
+        }
+        .agv-info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+        }
+        .agv-info-card {
+            padding: 18px;
+        }
+        .agv-stat-list {
+            margin-top: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .agv-stat-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .agv-stat-row:last-child {
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+        .agv-stat-label,
+        .agv-kv-label {
+            font-size: 14px;
+            color: var(--color-text-secondary);
+        }
+        .agv-stat-value,
+        .agv-kv-value {
+            color: var(--color-text);
+            font-weight: 600;
+        }
+        .agv-status-grid {
+            margin-top: 18px;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px 16px;
+        }
+        .agv-kv-block {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-height: 58px;
+        }
+        .agv-kv-value {
+            font-size: 18px;
+            line-height: 1.2;
+        }
+        .agv-floating-card {
+            position: absolute;
+            width: 280px;
+            min-height: 200px;
+            padding: 0;
+            z-index: 8;
+            overflow: hidden;
+            border-radius: 8px;
+            box-shadow: 0 18px 38px rgba(0,0,0,0.35), 0 0 24px rgba(74,144,217,0.12);
+        }
+        .agv-floating-card.dragging {
+            box-shadow: 0 24px 52px rgba(74,144,217,0.18), 0 0 26px rgba(74,144,217,0.2);
+        }
+        .agv-floating-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 14px 16px 12px;
+            cursor: move;
+            user-select: none;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            background: rgba(255,255,255,0.04);
+        }
+        .agv-floating-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--color-text);
+        }
+        .agv-floating-hint {
+            margin-top: 4px;
+            font-size: 12px;
+            color: var(--color-text-secondary);
+        }
+        .agv-floating-close {
+            width: 28px;
+            height: 28px;
+            border: none;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.06);
+            color: var(--color-text);
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+        }
+        .agv-floating-close:hover {
+            background: rgba(255,255,255,0.12);
+        }
+        .agv-floating-body {
+            padding: 14px 16px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        .agv-floating-section {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .agv-floating-label {
+            font-size: 12px;
+            letter-spacing: 0.2px;
+            color: var(--color-text-secondary);
+            text-transform: uppercase;
+        }
+        .agv-floating-section strong {
+            font-size: 14px;
+            color: var(--color-text);
+        }
+        .agv-floating-pairs {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .agv-floating-pair,
+        .agv-floating-status-row,
+        .agv-floating-health {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            font-size: 13px;
+            color: var(--color-text-secondary);
+        }
+        .agv-floating-pair strong,
+        .agv-floating-status-row strong,
+        .agv-floating-health strong {
+            color: #7bb6ff;
+        }
+        .agv-floating-health span {
+            color: var(--color-text-secondary);
+        }
+        .agv-state-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+            box-shadow: 0 0 10px currentColor;
+        }
+        .agv-state-dot.is-normal {
+            color: #52c41a;
+            background: #52c41a;
+        }
+        .agv-state-dot.is-warning {
+            color: #faad14;
+            background: #faad14;
+        }
+        .agv-state-dot.is-error {
+            color: #f5222d;
+            background: #f5222d;
+        }
+        @media (max-width: 1439px) {
+            .agv-detail-layout {
+                grid-template-columns: 1fr;
+            }
+            .agv-model-panel,
+            .agv-info-panel {
+                min-height: auto;
+            }
+        }
+        @media (max-width: 1023px) {
+            .agv-info-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        @media (max-width: 767px) {
+            .agv-page-title {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+            }
+            .agv-model-panel,
+            .agv-info-card {
+                padding: 14px;
+            }
+            .agv-model-shell {
+                min-height: 400px;
+            }
+            .agv-component-legend {
+                max-width: 100%;
+                margin-left: 0;
+            }
+            .agv-panel-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- Top Navigation -->
+        <header class="top-nav">
+            <div class="top-nav-left">
+                <button class="sidebar-toggle" @click="toggleSidebar" title="切换侧边栏">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                        <line x1="3" y1="6" x2="21" y2="6"/>
+                        <line x1="3" y1="12" x2="21" y2="12"/>
+                        <line x1="3" y1="18" x2="21" y2="18"/>
+                    </svg>
+                </button>
+                <div class="logo-area">
+                    <svg class="logo-icon" viewBox="0 0 32 32" fill="none">
+                        <rect x="2" y="8" width="28" height="16" rx="3" stroke="currentColor" stroke-width="1.5"/>
+                        <circle cx="9" cy="24" r="3" stroke="currentColor" stroke-width="1.5"/>
+                        <circle cx="23" cy="24" r="3" stroke="currentColor" stroke-width="1.5"/>
+                        <path d="M8 8V5a2 2 0 012-2h12a2 2 0 012 2v3" stroke="currentColor" stroke-width="1.5"/>
+                        <path d="M12 14h8M12 18h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                    <span class="logo-text">智能物料搬运系统</span>
+                </div>
+                <span class="sim-banner">模拟模式 – 仿真数据</span>
+            </div>
+            <div class="top-nav-right">
+                <button class="nav-btn">
+                    <span class="ws-dot connected"></span>
+                    <span>已连接</span>
+                </button>
+                <button class="nav-btn lang-switch">中 / EN</button>
+                <div class="user-info">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16">
+                        <circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0112 0v1"/>
+                    </svg>
+                    <span>operator01</span>
+                </div>
+                <button class="nav-btn">退出</button>
+            </div>
+        </header>
+
+        <!-- Sidebar -->
+        <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
+            <div class="menu-section-title">导航</div>
+
+            <a :class="['menu-item', { active: isRouteActive('/') }]" href="#/">
+                <span class="menu-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                </span>
+                <span class="menu-label">监控总览</span>
+            </a>
+            <a :class="['menu-item', { active: isRouteActive('/map') }]" href="#/map">
+                <span class="menu-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><path d="M8 2v16M16 6v16"/></svg>
+                </span>
+                <span class="menu-label">地图监控</span>
+            </a>
+
+            <div class="menu-section-title">管理</div>
+            <a :class="['menu-item', { active: isRouteActive('/agv') }]" href="#/agv">
+                <span class="menu-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="2"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>
+                </span>
+                <span class="menu-label">AGV 管理</span>
+            </a>
+            <a class="menu-item" href="#/tasks">
+                <span class="menu-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                </span>
+                <span class="menu-label">任务管理</span>
+            </a>
+            <a class="menu-item" href="#/inspection">
+                <span class="menu-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                </span>
+                <span class="menu-label">物料检测</span>
+            </a>
+
+            <div class="menu-section-title">系统</div>
+            <a class="menu-item" href="#/events">
+                <span class="menu-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                </span>
+                <span class="menu-label">事件日志</span>
+            </a>
+            <a class="menu-item" href="#/audit">
+                <span class="menu-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </span>
+                <span class="menu-label">审计日志</span>
+            </a>
+            <a class="menu-item" href="#/settings">
+                <span class="menu-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                </span>
+                <span class="menu-label">系统设置</span>
+            </a>
+            <a class="menu-item" href="#/nlp">
+                <span class="menu-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                </span>
+                <span class="menu-label">智能交互</span>
+            </a>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+            <router-view></router-view>
+        </main>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/vue-router@4/dist/vue-router.global.prod.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="variables.js"></script>
+    <script src="home.js"></script>
+    <script src="map.js"></script>
+    <script src="agv.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
