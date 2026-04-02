@@ -112,6 +112,7 @@ const map = {
             errorMessage: '',
             lastUpdateTime: '--:--:--',
             connectionState: variables.SIMULATION_MODE ? 'simulation' : 'connecting',
+            agvDataMode: variables.SIMULATION_MODE ? 'simulation' : 'api',
             mapConfig: null,
             agvs: [],
             tooltip: {
@@ -223,7 +224,7 @@ const map = {
                 await this.loadInitialData();
                 this.loading = false;
 
-                if (variables.SIMULATION_MODE) {
+                if (this.agvDataMode === 'simulation') {
                     this.startMockRealtime();
                 } else {
                     this.connectAgvStatus();
@@ -415,10 +416,13 @@ const map = {
 
         async loadInitialData() {
             const mapData = await this.fetchMap();
-            const agvData = await this.fetchAgvs();
+            const agvResult = await this.fetchAgvs();
 
             this.mapConfig = this.normalizeMapData(mapData);
-            this.agvs = agvData.map((item) => this.normalizeAgv(item));
+            this.agvs = agvResult.data.map((item) => this.normalizeAgv(item));
+            this.agvDataMode = agvResult.mode;
+            this.connectionState = this.agvDataMode === 'simulation' ? 'simulation' : 'connecting';
+            variables.AGV_SHARED_STATE.publish(agvResult.data);
             this.pathVisibility = {};
             this.pathData = {};
 
@@ -440,12 +444,23 @@ const map = {
         },
 
         async fetchAgvs() {
-            if (variables.SIMULATION_MODE) {
-                return this.buildMockAgvs();
-            }
+            try {
+                const response = await this.fetchJson('agv');
+                variables.AGV_SHARED_STATE.publish(Array.isArray(response.data) ? response.data : []);
+                return {
+                    data: Array.isArray(response.data) ? response.data : [],
+                    mode: 'api'
+                };
+            } catch (error) {
+                if (variables.SIMULATION_MODE) {
+                    return {
+                        data: this.buildMockAgvs(),
+                        mode: 'simulation'
+                    };
+                }
 
-            const response = await this.fetchJson('agv');
-            return Array.isArray(response.data) ? response.data : [];
+                throw error;
+            }
         },
 
         async fetchPlannedPath(agvId) {
@@ -1250,6 +1265,7 @@ const map = {
                     };
                 });
 
+                variables.AGV_SHARED_STATE.publish(this.agvs);
                 this.syncAgvMeshes();
                 this.syncPathMeshes();
                 this.updateTime();
@@ -1287,6 +1303,7 @@ const map = {
                     try {
                         const payload = JSON.parse(event.data);
                         if (payload.topic === 'agv/status' && Array.isArray(payload.data)) {
+                            variables.AGV_SHARED_STATE.publish(payload.data);
                             this.agvs = payload.data.map((item) => this.normalizeAgv(item));
                             this.syncAgvMeshes();
                             this.syncPathMeshes();
@@ -1333,14 +1350,14 @@ const map = {
                 try {
                     this.connectionState = 'polling';
                     const agvData = await this.fetchAgvs();
-                    this.agvs = agvData.map((item) => this.normalizeAgv(item));
+                    this.agvs = agvData.data.map((item) => this.normalizeAgv(item));
                     this.syncAgvMeshes();
                     this.syncPathMeshes();
                     this.updateTime();
                 } catch (error) {
                     this.connectionState = 'disconnected';
                 }
-            }, 2000);
+            }, variables.AGV_POLL_INTERVAL_MS || 1000);
         },
 
         updateTime() {

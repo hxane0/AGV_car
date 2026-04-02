@@ -259,22 +259,22 @@ const agv = {
             sceneLoading: true,
             sceneNote: '',
             agvInfo: {
-                id: 'AGV-003',
-                model: 'AGC-R550',
-                taskStatus: '执行中',
+                id: '--',
+                model: '--',
+                taskStatus: '—',
                 mode: 'auto',
-                serialNo: 'AGC-2026-003',
-                location: 'A 区分拣线 / 站点 B03',
-                runtime: '08:23:18'
+                serialNo: '--',
+                location: '--',
+                runtime: '--'
             },
             realtimeStatus: {
-                battery: 78,
-                speed: 0.56,
-                location: 'X 24.6 / Y 11.8',
-                heading: '86°',
-                mode: '自动运行',
-                signal: '98%',
-                runtime: '08:23:18'
+                battery: 0,
+                speed: 0,
+                location: '--',
+                heading: '--',
+                mode: '--',
+                signal: '--',
+                runtime: '--'
             },
             pulseMap: {},
             componentCatalog: JSON.parse(JSON.stringify(AGV_COMPONENT_META)),
@@ -296,17 +296,22 @@ const agv = {
             hoveredComponentKey: '',
             suppressBlankClickUntil: 0,
             realtimeTimer: null,
+            agvPollingTimer: null,
             sceneReady: false,
             pointerDownInfo: null,
             mainShadowLight: null,
+            activeAgvId: '',
+            activeRequestId: 0,
+            apiDataReady: false,
             /** 由地图监控跳转并写入快照时为 true，实时模拟不覆盖这些字段 */
-            mapNavApplied: false
+            mapNavApplied: false,
+            agvSharedUnsubscribe: null
         };
     },
 
     watch: {
         '$route'() {
-            this.applyMapNavigationPayload();
+            this.handleRouteChange();
         }
     },
 
@@ -363,8 +368,10 @@ const agv = {
     },
 
     mounted() {
-        this.applyMapNavigationPayload();
-        this.updateTime();
+        this.agvSharedUnsubscribe = variables.AGV_SHARED_STATE.subscribe((snapshot) => {
+            this.handleSharedAgvSnapshot(snapshot);
+        });
+        this.handleRouteChange();
         this.initScene();
         this.startRealtimeTick();
         this.dragMoveHandler = (event) => this.handleCardDrag(event);
@@ -374,8 +381,15 @@ const agv = {
     },
 
     beforeUnmount() {
+        if (this.agvSharedUnsubscribe) {
+            this.agvSharedUnsubscribe();
+            this.agvSharedUnsubscribe = null;
+        }
         if (this.realtimeTimer) {
             clearInterval(this.realtimeTimer);
+        }
+        if (this.agvPollingTimer) {
+            clearInterval(this.agvPollingTimer);
         }
         window.removeEventListener('mousemove', this.dragMoveHandler);
         window.removeEventListener('mouseup', this.dragUpHandler);
@@ -383,6 +397,18 @@ const agv = {
     },
 
     methods: {
+        async handleRouteChange() {
+            this.stopAgvPolling();
+            this.applyMapNavigationPayload();
+            this.applySharedAgvDetail(this.getRouteAgvId());
+            await this.loadAgvFromApi();
+        },
+
+        getRouteAgvId() {
+            const qid = this.$route && this.$route.query ? this.$route.query.id : '';
+            return qid !== undefined && qid !== null && String(qid) !== '' ? String(qid) : '';
+        },
+
         applyMapNavigationPayload() {
             const qid = this.$route.query.id;
             if (qid === undefined || qid === null || String(qid) === '') {
@@ -452,9 +478,254 @@ const agv = {
                 ' / Y ' + Number(payload.position_y || 0).toFixed(1);
             this.realtimeStatus.heading = Number(payload.orientation || 0).toFixed(0) + '°';
             this.realtimeStatus.mode = modeRealtimeLabel[mode] || '自动运行';
-            this.realtimeStatus.signal = '98%';
+            this.realtimeStatus.signal = '--';
 
             this.mapNavApplied = true;
+        },
+
+        async loadAgvFromApi() {
+            const requestId = Date.now();
+            this.activeRequestId = requestId;
+
+            try {
+                const agvId = await this.resolveAgvId();
+                if (!agvId) {
+                    this.apiDataReady = false;
+                    this.activeAgvId = '';
+                    this.sceneNote = '未获取到 AGV 数据。';
+                    this.stopAgvPolling();
+                    return;
+                }
+
+                const detail = await this.fetchAgvDetail(agvId);
+                if (this.activeRequestId !== requestId) {
+                    return;
+                }
+
+                this.activeAgvId = String(agvId);
+                this.applyAgvDetail(detail);
+                this.apiDataReady = true;
+                this.sceneNote = '';
+                this.startAgvPolling();
+            } catch (error) {
+                if (this.activeRequestId !== requestId) {
+                    return;
+                }
+
+                this.apiDataReady = false;
+                this.stopAgvPolling();
+                if (!this.mapNavApplied) {
+                    this.sceneNote = 'AGV 接口不可用，未能加载实时详情。';
+                }
+            }
+        },
+
+        handleSharedAgvSnapshot(snapshot) {
+            const list = snapshot && Array.isArray(snapshot.list) ? snapshot.list : [];
+            if (!list.length) {
+                return;
+            }
+
+            const targetId = this.activeAgvId || this.getRouteAgvId() || String(list[0].id || '');
+            if (!targetId) {
+                return;
+            }
+
+            this.applySharedAgvDetail(targetId, list);
+        },
+
+        applySharedAgvDetail(agvId, sourceList) {
+            const targetId = String(agvId || '');
+            if (!targetId) {
+                return false;
+            }
+
+            const list = Array.isArray(sourceList) ? sourceList : variables.AGV_SHARED_STATE.getList();
+            const detail = list.find((item) => String(item.id) === targetId);
+            if (!detail) {
+                return false;
+            }
+
+            this.activeAgvId = targetId;
+            this.applyAgvDetail(detail);
+            this.apiDataReady = true;
+            if (!this.mapNavApplied) {
+                this.sceneNote = '';
+            }
+            return true;
+        },
+
+        async resolveAgvId() {
+            const routeId = this.getRouteAgvId();
+            if (routeId) {
+                return routeId;
+            }
+
+            const sharedList = variables.AGV_SHARED_STATE.getList();
+            if (sharedList.length) {
+                const firstSharedAgv = sharedList[0];
+                return firstSharedAgv && firstSharedAgv.id !== undefined && firstSharedAgv.id !== null ? String(firstSharedAgv.id) : '';
+            }
+
+            const agvList = await this.fetchAgvList();
+            if (!agvList.length) {
+                return '';
+            }
+
+            const firstAgv = agvList[0];
+            return firstAgv && firstAgv.id !== undefined && firstAgv.id !== null ? String(firstAgv.id) : '';
+        },
+
+        async fetchAgvList() {
+            const response = await this.fetchJson('agv');
+            const list = Array.isArray(response.data) ? response.data : [];
+            variables.AGV_SHARED_STATE.publish(list);
+            return list;
+        },
+
+        async fetchAgvDetail(agvId, forceRefresh) {
+            if (!forceRefresh) {
+                const sharedDetail = variables.AGV_SHARED_STATE.getById(agvId);
+                if (sharedDetail) {
+                    return sharedDetail;
+                }
+            }
+
+            const agvList = await this.fetchAgvList();
+            const detail = agvList.find((item) => String(item.id) === String(agvId));
+            if (!detail) {
+                throw new Error('未找到 AGV ' + agvId + ' 的实时数据');
+            }
+            return detail;
+        },
+
+        async fetchJson(path) {
+            const response = await fetch(this.buildApiUrl(path), {
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('请求失败: ' + response.status + ' ' + response.statusText);
+            }
+
+            return response.json();
+        },
+
+        buildApiUrl(path) {
+            const base = (variables.API_URL || '').replace(/\/+$/, '');
+            const cleanPath = String(path || '').replace(/^\/+/, '');
+            return base + '/' + cleanPath;
+        },
+
+        startAgvPolling() {
+            this.stopAgvPolling();
+            if (!this.activeAgvId) {
+                return;
+            }
+
+            this.agvPollingTimer = setInterval(async () => {
+                try {
+                    const detail = await this.fetchAgvDetail(this.activeAgvId, true);
+                    this.applyAgvDetail(detail);
+                } catch (error) {
+                    this.apiDataReady = false;
+                    this.stopAgvPolling();
+                    if (!this.mapNavApplied) {
+                        this.sceneNote = 'AGV 接口不可用，已停止自动刷新。';
+                    }
+                }
+            }, variables.AGV_POLL_INTERVAL_MS || 1000);
+        },
+
+        stopAgvPolling() {
+            if (this.agvPollingTimer) {
+                clearInterval(this.agvPollingTimer);
+                this.agvPollingTimer = null;
+            }
+        },
+
+        applyAgvDetail(payload) {
+            const nextMode = payload.mode || this.mapStatusToMode(payload.status);
+            this.agvInfo.id = payload.name || ('AGV-' + String(payload.id).padStart(3, '0'));
+            this.agvInfo.model = payload.model || '--';
+            this.agvInfo.taskStatus = payload.current_task_summary ? String(payload.current_task_summary) : '—';
+            this.agvInfo.mode = nextMode || 'auto';
+            this.agvInfo.serialNo = 'AGC-2026-' + String(payload.id).padStart(3, '0');
+            this.agvInfo.location = this.formatLocation(payload.position_x, payload.position_y);
+
+            this.realtimeStatus.battery = Math.round(Number(payload.battery || 0));
+            this.realtimeStatus.speed = Number(payload.speed != null ? payload.speed : 0);
+            this.realtimeStatus.location = this.formatLocation(payload.position_x, payload.position_y, payload.position_z);
+            this.realtimeStatus.heading = Number(payload.orientation || 0).toFixed(0) + '°';
+            this.realtimeStatus.mode = this.formatModeLabel(nextMode);
+            this.realtimeStatus.signal = this.formatCommunicationQuality(payload.communication_quality);
+            this.realtimeStatus.runtime = '--';
+
+            ['battery', 'speed', 'location', 'heading', 'mode', 'signal', 'runtime'].forEach((key) => this.pulseField(key));
+            this.patchComponentMetrics();
+            this.lastUpdateTime = this.formatDisplayTime(payload.last_update);
+        },
+
+        mapStatusToMode(status) {
+            const statusToMode = {
+                running: 'auto',
+                idle: 'auto',
+                charging: 'charging',
+                error: 'manual',
+                offline: 'manual'
+            };
+            return statusToMode[status] || 'auto';
+        },
+
+        formatModeLabel(mode) {
+            const modeRealtimeLabel = {
+                auto: '自动运行',
+                manual: '人工接管',
+                charging: '充电中'
+            };
+            return modeRealtimeLabel[mode] || '--';
+        },
+
+        formatCommunicationQuality(value) {
+            const labelMap = {
+                strong: '强',
+                medium: '中',
+                weak: '弱',
+                disconnected: '断开'
+            };
+            return labelMap[value] || '--';
+        },
+
+        formatLocation(x, y, z) {
+            const hasZ = z !== undefined && z !== null;
+            if (hasZ) {
+                return (
+                    'X ' + Number(x || 0).toFixed(1) +
+                    ' / Y ' + Number(y || 0).toFixed(1) +
+                    ' / Z ' + Number(z || 0).toFixed(1)
+                );
+            }
+
+            return 'X ' + Number(x || 0).toFixed(1) + ' / Y ' + Number(y || 0).toFixed(1);
+        },
+
+        formatDisplayTime(value) {
+            if (!value) {
+                return '--:--:--';
+            }
+
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) {
+                return '--:--:--';
+            }
+
+            return date.toLocaleTimeString('zh-CN', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
         },
 
         updateTime() {
@@ -466,36 +737,8 @@ const agv = {
         },
 
         startRealtimeTick() {
-            let totalSeconds = 8 * 3600 + 23 * 60 + 18;
             this.realtimeTimer = setInterval(() => {
-                totalSeconds += 1;
-
-                if (this.mapNavApplied) {
-                    this.realtimeStatus.runtime = this.formatRuntime(totalSeconds);
-                    this.patchComponentMetrics();
-                    ['battery', 'speed', 'location', 'heading', 'signal', 'runtime'].forEach((key) => this.pulseField(key));
-                    this.updateTime();
-                    return;
-                }
-
-                const battery = Math.max(42, this.realtimeStatus.battery - 0.2);
-                const speed = 0.45 + Math.abs(Math.sin(Date.now() / 1800)) * 0.18;
-                const posX = 24.6 + Math.sin(Date.now() / 2200) * 1.1;
-                const posY = 11.8 + Math.cos(Date.now() / 2600) * 0.8;
-                const heading = 80 + Math.sin(Date.now() / 2000) * 12;
-                const signal = 95 + Math.round(Math.abs(Math.cos(Date.now() / 2500)) * 4);
-
-                this.realtimeStatus.battery = Number(battery.toFixed(1));
-                this.realtimeStatus.speed = Number(speed.toFixed(2));
-                this.realtimeStatus.location = 'X ' + posX.toFixed(1) + ' / Y ' + posY.toFixed(1);
-                this.realtimeStatus.heading = heading.toFixed(0) + '°';
-                this.realtimeStatus.signal = signal + '%';
-                this.realtimeStatus.runtime = this.formatRuntime(totalSeconds);
-                this.agvInfo.location = 'A 区分拣线 / 站点 B03';
-
                 this.patchComponentMetrics();
-                ['battery', 'speed', 'location', 'heading', 'signal', 'runtime'].forEach((key) => this.pulseField(key));
-                this.updateTime();
             }, 1000);
         },
 

@@ -24,6 +24,8 @@ from django.urls import include
 from EmployeeApp import views
 urlpatterns = [
     re_path("admin/", admin.site.urls),
+    path("api/v1/agv", views.agvApi),
+    path("api/v1/agv/", views.agvApi),
     path("department", views.departmentApi),
     path("department/", views.departmentApi),
     path("department/<int:id>", views.departmentApi),
