@@ -25,7 +25,7 @@ SECRET_KEY = "django-insecure-0tgjixdypl6$3sk!qyk1=)g_@!dspq$uqont)*8#im0e&tg!8a
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -77,6 +77,7 @@ WSGI_APPLICATION = "DjangoAPI.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 import pymysql
+pymysql.version_info = (2, 2, 1, "final", 0)
 pymysql.install_as_MySQLdb()  # 解决MySQLdb导入错误
 
 DATABASES = {

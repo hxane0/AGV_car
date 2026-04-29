@@ -44,3 +44,28 @@ class AgvLatestStatus(models.Model):
 
     class Meta:
         db_table = "agv_latest_status"
+
+
+class ProductionTask(models.Model):
+    """生产任务（与前端任务管理终端字段对应，持久化到 MySQL）"""
+
+    task_code = models.CharField(max_length=32, primary_key=True)
+    product_model = models.CharField(max_length=100)
+    quantity = models.PositiveIntegerField()
+    completed_units = models.PositiveIntegerField(default=0)
+    priority = models.CharField(max_length=20, default="normal")
+    status = models.CharField(max_length=20, default="waiting")
+    agv_id = models.CharField(max_length=32, blank=True, default="")
+    current_station = models.CharField(max_length=100, default="上料位")
+    remark = models.CharField(max_length=500, blank=True, default="")
+    created_at = models.DateTimeField()
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    timeline_json = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        db_table = "production_task"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.task_code

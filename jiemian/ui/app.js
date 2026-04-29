@@ -2,6 +2,8 @@ const routes = [
     { path: '/', component: window.home },
     { path: '/map', component: window.map },
     { path: '/agv', component: window.agv },
+    { path: '/inspection', component: window.inspectionPage },
+    { path: '/events', component: window.eventsPage },
     { path: '/tasks/create', component: window.taskCreatePage },
     { path: '/tasks', component: window.tasksPage },
     { path: '/home', redirect: '/' }

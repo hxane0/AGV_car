@@ -486,6 +486,148 @@ function ensureTaskTerminalStyles() {
             padding: 28px 0;
             text-align: center;
         }
+        .task-title-bar-actions {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .task-history-entry-btn {
+            padding: 8px 16px;
+            border-radius: 10px;
+            border: 1px solid rgba(74,144,217,0.45);
+            background: rgba(74,144,217,0.14);
+            color: var(--color-ice-white);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+        .task-history-entry-btn:hover {
+            background: rgba(74,144,217,0.22);
+            border-color: rgba(74,144,217,0.55);
+        }
+        .task-history-drawer {
+            width: min(720px, 94vw);
+            max-width: 100%;
+            display: flex;
+            flex-direction: column;
+            max-height: 92vh;
+            overflow: hidden;
+        }
+        .task-history-body {
+            flex: 1;
+            overflow: auto;
+            padding: 0 20px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+        .task-history-chart-wrap {
+            border-radius: 12px;
+            background: rgba(0,0,0,0.18);
+            border: 1px solid rgba(255,255,255,0.06);
+            padding: 12px 12px 4px;
+        }
+        .task-history-chart {
+            width: 100%;
+            height: 280px;
+        }
+        .task-history-filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+        }
+        .task-history-filter-row label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--color-text-secondary);
+            font-size: 13px;
+        }
+        .task-history-filter-row input[type="date"] {
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.05);
+            color: var(--color-text);
+        }
+        .task-history-link-btn {
+            background: transparent;
+            border: none;
+            color: #9bc7ff;
+            cursor: pointer;
+            font-size: 13px;
+            padding: 0;
+        }
+        .task-history-link-btn:hover {
+            text-decoration: underline;
+        }
+        .task-history-table-wrap {
+            overflow: auto;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        .task-history-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .task-history-table th,
+        .task-history-table td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .task-history-table th {
+            color: var(--color-text-secondary);
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .task-history-table tbody tr:hover {
+            background: rgba(255,255,255,0.03);
+        }
+        .task-history-summary-row {
+            cursor: pointer;
+        }
+        .task-history-summary-row.is-active {
+            background: rgba(74,144,217,0.12);
+        }
+        .task-terminal-random-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 14px;
+            margin-bottom: 12px;
+            border-radius: 12px;
+            background: rgba(74,144,217,0.08);
+            border: 1px solid rgba(74,144,217,0.2);
+        }
+        .task-terminal-random-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+        }
+        .task-terminal-random-actions label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--color-text-secondary);
+        }
+        .task-terminal-random-actions .task-input,
+        .task-terminal-random-actions input[type="number"] {
+            width: 56px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.05);
+            color: var(--color-text);
+        }
         @media (max-width: 1280px) {
             .task-terminal-summary,
             .task-terminal-log-body {
@@ -752,14 +894,18 @@ function appendTaskEvent(store, task, text, group, level, customTime) {
     const time = customTime || nowIso();
     const event = createTimelineEvent(time, text, group || 'task', level || 'info');
     task.timeline.push(event);
-    store.logs.unshift({
+    const logEntry = {
         id: event.id,
         taskId: task.id,
         time: event.time,
         text: task.id + ' ' + text,
         group: event.group,
         level: event.level
-    });
+    };
+    store.logs.unshift(logEntry);
+    if (typeof window !== 'undefined' && window.jiemianEventStream) {
+        window.jiemianEventStream.pushTaskLog(logEntry);
+    }
     task.updatedAt = event.time;
     task.units = buildUnitFlow(task);
 }
@@ -790,7 +936,81 @@ function createNewTask(productModel, quantity, priority) {
     return task;
 }
 
+function randomIntInclusive(min, max) {
+    const lo = Math.ceil(min);
+    const hi = Math.floor(max);
+    return lo + Math.floor(Math.random() * (hi - lo + 1));
+}
+
+function pickRandomItem(arr) {
+    if (!arr || !arr.length) {
+        return null;
+    }
+    return arr[randomIntInclusive(0, arr.length - 1)];
+}
+
 syncTaskAgvs(taskStore);
+
+function tryPersistTask(task) {
+    if (typeof window === 'undefined' || !window.taskApi || !task || !task.id) {
+        return;
+    }
+    const body = window.taskApi.serializeTask(task);
+    if (!body) {
+        return;
+    }
+    window.taskApi.saveTask(body).catch(function (err) {
+        console.warn('任务同步失败', task.id, err);
+    });
+}
+
+function hydrateTaskStoreFromApi(data) {
+    if (!data || !Array.isArray(data.tasks)) {
+        return false;
+    }
+    const hydrated = data.tasks.map(function (t) {
+        return Object.assign({}, t, { units: buildUnitFlow(t) });
+    });
+    taskStore.tasks.splice(0, taskStore.tasks.length);
+    hydrated.forEach(function (t) {
+        taskStore.tasks.push(t);
+    });
+    const logs = buildSeedLogs(hydrated);
+    taskStore.logs.splice(0, taskStore.logs.length);
+    logs.forEach(function (log) {
+        taskStore.logs.push(log);
+    });
+    if (data.nextTaskNumber != null && Number.isFinite(Number(data.nextTaskNumber))) {
+        taskStore.nextTaskNumber = Number(data.nextTaskNumber);
+    } else {
+        const maxN = hydrated.length
+            ? Math.max.apply(
+                  null,
+                  hydrated.map(function (t) {
+                      return numericTaskId(t.id);
+                  })
+              )
+            : 0;
+        taskStore.nextTaskNumber = maxN + 1;
+    }
+    syncTaskAgvs(taskStore);
+    return true;
+}
+
+function taskCreatedDateKey(task) {
+    const iso = task && task.createdAt;
+    if (!iso) {
+        return '';
+    }
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) {
+        return '';
+    }
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
 
 function createTaskTerminalPage(entryMode) {
     return {
@@ -805,9 +1025,12 @@ function createTaskTerminalPage(entryMode) {
                     <div class="page-title">任务管理监控终端</div>
                     <div class="page-subtitle">生产订单创建、调度、执行与异常追踪一体化管理</div>
                 </div>
-                <div class="task-terminal-live">
-                    <span class="task-terminal-live-dot"></span>
-                    最近同步 {{ nowLabel }}
+                <div class="task-title-bar-actions">
+                    <button type="button" class="task-history-entry-btn" @click="openHistoryOrders">历史订单</button>
+                    <div class="task-terminal-live">
+                        <span class="task-terminal-live-dot"></span>
+                        最近同步 {{ nowLabel }}
+                    </div>
                 </div>
             </div>
 
@@ -884,7 +1107,7 @@ function createTaskTerminalPage(entryMode) {
                 <div class="task-terminal-panel-head">
                     <div>
                         <div class="task-terminal-panel-title">任务列表主面板</div>
-                        <div class="task-terminal-panel-note">共 {{ store.tasks.length }} 条任务，当前筛选后 {{ visibleTasks.length }} 条</div>
+                        <div class="task-terminal-panel-note">共 {{ store.tasks.length }} 条任务，当前筛选后 {{ visibleTasks.length }} 条（已完成默认不显示，可在「完成」中查看）</div>
                     </div>
                     <div class="task-terminal-filter-tabs">
                         <button
@@ -896,6 +1119,19 @@ function createTaskTerminalPage(entryMode) {
                         >
                             {{ tab.label }} {{ tab.count }}
                         </button>
+                    </div>
+                </div>
+
+                <div v-if="entryMode === 'list'" class="task-terminal-random-bar">
+                    <div class="task-terminal-panel-note" style="margin:0;">
+                        <strong>随机演示</strong>：按条数批量生成任务，每单数量为 <strong>1～20</strong> 随机；创建后自动尝试开始执行（无可用 AGV 时保持等待）。
+                    </div>
+                    <div class="task-terminal-random-actions">
+                        <label>
+                            生成条数
+                            <input v-model.number="randomDemoCount" type="number" min="1" max="10" step="1" />
+                        </label>
+                        <button type="button" class="task-btn task-btn-primary" @click="runRandomGenerateAndExecute">随机生成并执行</button>
                     </div>
                 </div>
 
@@ -1107,6 +1343,106 @@ function createTaskTerminalPage(entryMode) {
                 </aside>
             </div>
 
+            <div v-if="historyOrdersOpen" class="task-overlay" @click.self="closeHistoryOrders">
+                <aside class="task-drawer task-history-drawer glass-card" @click.stop>
+                    <div class="task-drawer-header">
+                        <div>
+                            <div class="task-drawer-title">历史订单</div>
+                            <div class="page-subtitle">按创建日统计；柱状图纵轴为各型号<strong>生产数量</strong>（任务「数量」字段之和，非订单条数）</div>
+                        </div>
+                        <button type="button" class="task-drawer-close" @click="closeHistoryOrders">×</button>
+                    </div>
+                    <div class="task-history-body">
+                        <div class="task-terminal-panel-note">以下为当前已加载任务（与数据库同步）。点击下表某日可快速筛选该日订单。</div>
+
+                        <div>
+                            <div class="task-terminal-section-title">每日生产数量统计（按型号汇总件数）</div>
+                            <div class="task-history-table-wrap">
+                                <table class="task-history-table">
+                                    <thead>
+                                        <tr>
+                                            <th>日期</th>
+                                            <th>当日合计（件）</th>
+                                            <th>标准版（件）</th>
+                                            <th>Pro版（件）</th>
+                                            <th>无线充新版（件）</th>
+                                            <th>其他（件）</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr
+                                            v-for="row in historyDailySummaryRows"
+                                            :key="row.date"
+                                            class="task-history-summary-row"
+                                            :class="{ 'is-active': historyFilterDate === row.date }"
+                                            @click="historyFilterDate = row.date"
+                                        >
+                                            <td>{{ row.dateLabel }}</td>
+                                            <td><strong>{{ row.total }}</strong></td>
+                                            <td>{{ row.standard }}</td>
+                                            <td>{{ row.pro }}</td>
+                                            <td>{{ row.wireless }}</td>
+                                            <td>{{ row.other }}</td>
+                                        </tr>
+                                        <tr v-if="!historyDailySummaryRows.length">
+                                            <td colspan="6">
+                                                <div class="task-terminal-empty" style="padding:24px;">暂无订单数据</div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="task-history-filter-row">
+                            <label>
+筛选日期
+                                <input v-model="historyFilterDate" type="date" />
+                            </label>
+                            <button type="button" class="task-history-link-btn" @click="historyFilterDate = ''">清除筛选 · 显示全部</button>
+                        </div>
+
+                        <div>
+                            <div class="task-terminal-section-title">
+                                订单明细 {{ historyFilterDate ? '（' + historyFilterDate + '）' : '（全部）' }} · 共 {{ historyFilteredTasks.length }} 条
+                            </div>
+                            <div class="task-history-table-wrap" style="max-height: 240px;">
+                                <table class="task-history-table">
+                                    <thead>
+                                        <tr>
+                                            <th>任务ID</th>
+                                            <th>型号</th>
+                                            <th>数量</th>
+                                            <th>状态</th>
+                                            <th>创建时间</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="t in historyFilteredTasks" :key="t.id">
+                                            <td>{{ t.id }}</td>
+                                            <td>{{ t.productModel }}</td>
+                                            <td>{{ t.quantity }}</td>
+                                            <td>{{ statusMeta(t.status).label }}</td>
+                                            <td>{{ formatDateTime(t.createdAt) }}</td>
+                                        </tr>
+                                        <tr v-if="!historyFilteredTasks.length">
+                                            <td colspan="5">
+                                                <div class="task-terminal-empty" style="padding:20px;">该条件下暂无订单</div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="task-history-chart-wrap">
+                            <div class="task-terminal-section-title" style="margin-bottom:4px;">生产数量（按日分组 · 三型号并列柱 · 单位：件）</div>
+                            <div ref="historyChartRef" class="task-history-chart"></div>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+
             <div v-if="confirmDialog.open" class="task-overlay" @click.self="closeConfirm">
                 <div class="task-modal glass-card">
                     <div class="task-modal-title">{{ confirmDialog.title }}</div>
@@ -1145,7 +1481,10 @@ function createTaskTerminalPage(entryMode) {
                 },
                 simulationTimer: null,
                 clockTimer: null,
-                simulationStep: 0
+                simulationStep: 0,
+                historyOrdersOpen: false,
+                historyFilterDate: '',
+                randomDemoCount: 1
             };
         },
 
@@ -1220,7 +1559,12 @@ function createTaskTerminalPage(entryMode) {
             },
 
             visibleTasks() {
-                return this.sortedTasks.filter((task) => matchesTaskFilter(task, this.activeFilter));
+                return this.sortedTasks.filter((task) => {
+                    if (this.activeFilter !== 'completed' && task.status === 'completed') {
+                        return false;
+                    }
+                    return matchesTaskFilter(task, this.activeFilter);
+                });
             },
 
             allVisibleWaitingIds() {
@@ -1280,16 +1624,132 @@ function createTaskTerminalPage(entryMode) {
                     return 0;
                 }
                 return Math.round((this.completedCount / this.store.tasks.length) * 100);
+            },
+
+            historyByDateModelCount() {
+                const acc = {};
+                const emptyBucket = () => ({
+                    标准版: 0,
+                    Pro版: 0,
+                    无线充新版: 0,
+                    其他: 0
+                });
+                this.store.tasks.forEach((t) => {
+                    const d = taskCreatedDateKey(t);
+                    if (!d) {
+                        return;
+                    }
+                    if (!acc[d]) {
+                        acc[d] = emptyBucket();
+                    }
+                    const q = Math.max(0, Math.round(Number(t.quantity) || 0));
+                    const pm = t.productModel;
+                    if (TASK_PRODUCT_MODELS.includes(pm)) {
+                        acc[d][pm] += q;
+                    } else {
+                        acc[d].其他 += q;
+                    }
+                });
+                return acc;
+            },
+
+            historyChartSortedDates() {
+                return Object.keys(this.historyByDateModelCount).sort();
+            },
+
+            historyDailySummaryRows() {
+                const acc = this.historyByDateModelCount;
+                return Object.keys(acc)
+                    .sort()
+                    .reverse()
+                    .map((date) => {
+                        const m = acc[date];
+                        const standard = m.标准版;
+                        const pro = m.Pro版;
+                        const wireless = m.无线充新版;
+                        const other = m.其他;
+                        const total = standard + pro + wireless + other;
+                        let dateLabel = date;
+                        try {
+                            const [yy, mm, dd] = date.split('-').map(Number);
+                            const wd = ['日', '一', '二', '三', '四', '五', '六'][new Date(yy, mm - 1, dd).getDay()];
+                            dateLabel = `${date}（周${wd}）`;
+                        } catch (e) {
+                            /* keep date */
+                        }
+                        return {
+                            date,
+                            dateLabel,
+                            total,
+                            standard,
+                            pro,
+                            wireless,
+                            other
+                        };
+                    });
+            },
+
+            historyFilteredTasks() {
+                const tasks = this.store.tasks.slice().sort((a, b) => {
+                    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+                });
+                if (!this.historyFilterDate) {
+                    return tasks;
+                }
+                return tasks.filter((t) => taskCreatedDateKey(t) === this.historyFilterDate);
             }
         },
 
         watch: {
             activeFilter() {
                 this.pruneSelection();
+            },
+            historyOrdersOpen(isOpen) {
+                if (isOpen) {
+                    this.$nextTick(() => {
+                        this.renderHistoryChart();
+                        if (!this._historyResizeBound) {
+                            this._historyResizeBound = () => {
+                                if (this.historyChartInstance) {
+                                    this.historyChartInstance.resize();
+                                }
+                            };
+                            window.addEventListener('resize', this._historyResizeBound);
+                        }
+                    });
+                } else {
+                    this.disposeHistoryChart();
+                }
+            },
+            'store.tasks': {
+                deep: true,
+                handler() {
+                    if (this.historyOrdersOpen) {
+                        this.$nextTick(() => this.renderHistoryChart());
+                    }
+                }
             }
         },
 
         mounted() {
+            const seedEventsIfNeeded = () => {
+                if (typeof window !== 'undefined' && window.jiemianEventStream && window.jiemianEventStream.isEmpty()) {
+                    window.jiemianEventStream.seedFromTaskLogs(taskStore.logs);
+                }
+            };
+            if (typeof window !== 'undefined' && window.taskApi) {
+                window.taskApi
+                    .fetchTasks()
+                    .then((data) => {
+                        hydrateTaskStoreFromApi(data);
+                        seedEventsIfNeeded();
+                    })
+                    .catch(() => {
+                        seedEventsIfNeeded();
+                    });
+            } else {
+                seedEventsIfNeeded();
+            }
             this.clockTimer = setInterval(() => {
                 this.nowTick = Date.now();
             }, 1000);
@@ -1312,9 +1772,161 @@ function createTaskTerminalPage(entryMode) {
             if (this.simulationTimer) {
                 clearInterval(this.simulationTimer);
             }
+            if (this._historyResizeBound) {
+                window.removeEventListener('resize', this._historyResizeBound);
+                this._historyResizeBound = null;
+            }
+            if (this.historyChartInstance) {
+                this.historyChartInstance.dispose();
+                this.historyChartInstance = null;
+            }
         },
 
         methods: {
+            openHistoryOrders() {
+                this.historyOrdersOpen = true;
+            },
+            closeHistoryOrders() {
+                this.historyOrdersOpen = false;
+            },
+            disposeHistoryChart() {
+                if (!this.historyChartInstance) {
+                    return;
+                }
+                try {
+                    this.historyChartInstance.dispose();
+                } catch (e) {
+                    /* ignore */
+                }
+                this.historyChartInstance = null;
+            },
+            renderHistoryChart() {
+                const el = this.$refs.historyChartRef;
+                if (!el || typeof echarts === 'undefined') {
+                    return;
+                }
+                const inst = this.historyChartInstance;
+                const instDom = inst && typeof inst.getDom === 'function' ? inst.getDom() : null;
+                const needInit = !inst || instDom !== el;
+                if (needInit) {
+                    this.disposeHistoryChart();
+                    const orphan = typeof echarts.getInstanceByDom === 'function' ? echarts.getInstanceByDom(el) : null;
+                    if (orphan) {
+                        try {
+                            orphan.dispose();
+                        } catch (e) {
+                            /* ignore */
+                        }
+                    }
+                    this.historyChartInstance = echarts.init(el, null, { renderer: 'canvas' });
+                }
+                const dates = this.historyChartSortedDates;
+                const counts = this.historyByDateModelCount;
+                const labels = dates.map((d) => {
+                    const p = d.split('-');
+                    return p.length >= 3 ? `${p[1]}-${p[2]}` : d;
+                });
+                const mk = (key) => dates.map((dt) => (counts[dt] && counts[dt][key]) || 0);
+                const labelOpt = {
+                    show: true,
+                    position: 'top',
+                    color: '#B8C0CC',
+                    fontSize: 11,
+                    formatter: (p) => (p.value > 0 ? p.value : '')
+                };
+                const series = [
+                    {
+                        name: '标准版',
+                        type: 'bar',
+                        emphasis: { focus: 'series' },
+                        data: mk('标准版'),
+                        itemStyle: { color: '#5B9BD5' },
+                        label: labelOpt,
+                        barMaxWidth: 22,
+                        barGap: '12%'
+                    },
+                    {
+                        name: 'Pro版',
+                        type: 'bar',
+                        emphasis: { focus: 'series' },
+                        data: mk('Pro版'),
+                        itemStyle: { color: '#70AD47' },
+                        label: labelOpt,
+                        barMaxWidth: 22
+                    },
+                    {
+                        name: '无线充新版',
+                        type: 'bar',
+                        emphasis: { focus: 'series' },
+                        data: mk('无线充新版'),
+                        itemStyle: { color: '#FFC000' },
+                        label: labelOpt,
+                        barMaxWidth: 22
+                    }
+                ];
+                const option =
+                    dates.length === 0
+                        ? {
+                              title: {
+                                  text: '暂无订单数据',
+                                  left: 'center',
+                                  top: 'center',
+                                  textStyle: { color: '#7A8494', fontSize: 14 }
+                              },
+                              xAxis: { type: 'category', data: [], axisLabel: { color: '#7A8494' } },
+                              yAxis: {
+                                  type: 'value',
+                                  name: '生产数量（件）',
+                                  minInterval: 1,
+                                  nameTextStyle: { color: '#7A8494' },
+                                  axisLabel: { color: '#7A8494' },
+                                  splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } }
+                              },
+                              series: []
+                          }
+                        : {
+                              tooltip: {
+                                  trigger: 'axis',
+                                  axisPointer: { type: 'shadow' },
+                                  formatter: (params) => {
+                                      if (!params || !params.length) {
+                                          return '';
+                                      }
+                                      const idx = params[0].dataIndex;
+                                      const fullDate = dates[idx] || '';
+                                      let html = `<div style="margin-bottom:4px;font-weight:600;">${fullDate}</div>`;
+                                      params.forEach((p) => {
+                                          html += `${p.marker}${p.seriesName}：${p.value} 件<br/>`;
+                                      });
+                                      return html;
+                                  }
+                              },
+                              legend: {
+                                  bottom: 0,
+                                  textStyle: { color: '#A8B2BE' }
+                              },
+                              grid: { left: 48, right: 16, top: 36, bottom: 56, containLabel: true },
+                              xAxis: {
+                                  type: 'category',
+                                  data: labels,
+                                  name: '日期',
+                                  nameTextStyle: { color: '#7A8494', fontSize: 11 },
+                                  axisLabel: { color: '#7A8494' },
+                                  axisTick: { alignWithLabel: true }
+                              },
+                              yAxis: {
+                                  type: 'value',
+                                  name: '生产数量（件）',
+                                  minInterval: 1,
+                                  nameTextStyle: { color: '#7A8494' },
+                                  axisLabel: { color: '#7A8494' },
+                                  splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } }
+                              },
+                              series
+                          };
+                this.historyChartInstance.setOption(option, { notMerge: true });
+                this.historyChartInstance.resize();
+            },
             statusMeta(status) {
                 return taskStatusMeta(status);
             },
@@ -1397,7 +2009,7 @@ function createTaskTerminalPage(entryMode) {
                 this.selectedIds = this.selectedIds.filter((id) => this.store.tasks.some((task) => task.id === id && task.status === 'waiting'));
             },
 
-            submitCreateTask() {
+            async submitCreateTask() {
                 const quantity = Number(this.createForm.quantity);
                 if (!Number.isFinite(quantity) || quantity < 1 || quantity > 99) {
                     pushTaskFlash('数量需在 1 到 99 之间', 'error');
@@ -1406,11 +2018,57 @@ function createTaskTerminalPage(entryMode) {
                 const task = createNewTask(this.createForm.productModel, Math.round(quantity), this.createForm.priority);
                 taskStore.tasks.unshift(cloneTaskData(task));
                 appendTaskEvent(taskStore, taskStore.tasks[0], '任务已进入等待队列顶部', 'task', 'info', task.createdAt);
+                if (typeof window !== 'undefined' && window.taskApi) {
+                    try {
+                        await window.taskApi.createTask(window.taskApi.serializeTask(taskStore.tasks[0]));
+                    } catch (e) {
+                        pushTaskFlash('任务已创建，但写入数据库失败：' + (e.message || '未知错误'), 'warning');
+                    }
+                }
                 pushTaskFlash('任务创建成功，已进入等待队列', 'success');
                 this.createForm.quantity = 1;
                 if (this.$route && this.$route.path === '/tasks/create') {
                     this.$router.push('/tasks');
                 }
+            },
+
+            async runRandomGenerateAndExecute() {
+                let n = Math.round(Number(this.randomDemoCount));
+                if (!Number.isFinite(n) || n < 1) {
+                    n = 1;
+                }
+                n = Math.min(10, n);
+                this.randomDemoCount = n;
+                let created = 0;
+                let started = 0;
+                for (let i = 0; i < n; i += 1) {
+                    const model = pickRandomItem(TASK_PRODUCT_MODELS) || '标准版';
+                    const qty = randomIntInclusive(1, 20);
+                    const priority = Math.random() < 0.28 ? 'urgent' : 'normal';
+                    const task = createNewTask(model, qty, priority);
+                    task.remark = priority === 'urgent' ? '紧急插单（随机）' : '随机生成演示';
+                    taskStore.tasks.unshift(cloneTaskData(task));
+                    const row = taskStore.tasks[0];
+                    appendTaskEvent(taskStore, row, '任务已进入等待队列顶部', 'task', 'info', task.createdAt);
+                    if (typeof window !== 'undefined' && window.taskApi) {
+                        try {
+                            await window.taskApi.createTask(window.taskApi.serializeTask(row));
+                        } catch (e) {
+                            pushTaskFlash(row.id + ' 写入数据库失败：' + (e.message || '未知错误'), 'warning');
+                        }
+                    }
+                    const wasWaiting = row.status === 'waiting';
+                    this.startTask(row, true);
+                    if (wasWaiting && row.status === 'running') {
+                        started += 1;
+                    }
+                    created += 1;
+                }
+                syncTaskAgvs(taskStore);
+                pushTaskFlash(
+                    '已随机生成 ' + created + ' 条（每单 1～20 件），已开始执行 ' + started + ' 条；其余可能因 AGV 占用保持等待',
+                    'success'
+                );
             },
 
             openDetail(task) {
@@ -1515,6 +2173,7 @@ function createTaskTerminalPage(entryMode) {
                 appendTaskEvent(this.store, task, '已分配给 ' + agv.id, 'task', 'info');
                 appendTaskEvent(this.store, task, '任务开始执行', 'task', 'info');
                 syncTaskAgvs(this.store);
+                tryPersistTask(task);
                 this.pruneSelection();
                 if (!silent) {
                     pushTaskFlash('任务已开始执行', 'success');
@@ -1528,6 +2187,7 @@ function createTaskTerminalPage(entryMode) {
                 task.status = 'paused';
                 appendTaskEvent(this.store, task, '任务已暂停，等待人工继续', 'task', 'warning');
                 syncTaskAgvs(this.store);
+                tryPersistTask(task);
                 pushTaskFlash('任务已暂停', 'info');
             },
 
@@ -1547,6 +2207,7 @@ function createTaskTerminalPage(entryMode) {
                 task.status = 'running';
                 appendTaskEvent(this.store, task, '任务恢复执行', 'task', 'info');
                 syncTaskAgvs(this.store);
+                tryPersistTask(task);
                 pushTaskFlash('任务已恢复执行', 'success');
             },
 
@@ -1558,6 +2219,7 @@ function createTaskTerminalPage(entryMode) {
                 task.finishedAt = nowIso();
                 appendTaskEvent(this.store, task, '任务已取消', 'alert', 'warning', task.finishedAt);
                 syncTaskAgvs(this.store);
+                tryPersistTask(task);
                 this.pruneSelection();
                 if (!silent) {
                     pushTaskFlash('任务已取消', 'error');
@@ -1571,6 +2233,7 @@ function createTaskTerminalPage(entryMode) {
                 task.finishedAt = nowIso();
                 appendTaskEvent(this.store, task, '所有 ' + task.quantity + ' 个单元完成下线，任务结束', 'task', 'info', task.finishedAt);
                 syncTaskAgvs(this.store);
+                tryPersistTask(task);
             },
 
             formatDateTime(value) {
@@ -1629,6 +2292,7 @@ function createTaskTerminalPage(entryMode) {
                             pushTaskFlash(target.id + ' 已完成', 'success');
                         } else {
                             syncTaskAgvs(this.store);
+                            tryPersistTask(target);
                         }
                     }
                 }
@@ -1639,6 +2303,7 @@ function createTaskTerminalPage(entryMode) {
                         candidate.status = 'exception';
                         appendTaskEvent(this.store, candidate, candidate.currentStation + ' 发生超时，任务已转为异常', 'alert', 'error');
                         syncTaskAgvs(this.store);
+                        tryPersistTask(candidate);
                     }
                 }
             }

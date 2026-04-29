@@ -132,6 +132,8 @@ const map = {
             ws: null,
             wsReconnectTimer: null,
             wsPingTimer: null,
+            poseWs: null,
+            poseWsReconnectTimer: null,
             pollingTimer: null,
             toastTimer: null
         };
@@ -145,6 +147,7 @@ const map = {
         connectionLabel() {
             const labels = {
                 simulation: '模拟数据',
+                ros_pose: 'ROS2位姿',
                 connecting: '正在连接',
                 connected: '实时连接',
                 reconnecting: '重连中',
@@ -224,7 +227,9 @@ const map = {
                 await this.loadInitialData();
                 this.loading = false;
 
-                if (this.agvDataMode === 'simulation') {
+                if (this.shouldUseRosPoseMode()) {
+                    this.startRosPoseRealtime();
+                } else if (this.agvDataMode === 'simulation') {
                     this.startMockRealtime();
                 } else {
                     this.connectAgvStatus();
@@ -400,6 +405,10 @@ const map = {
                 clearTimeout(this.wsReconnectTimer);
                 this.wsReconnectTimer = null;
             }
+            if (this.poseWsReconnectTimer) {
+                clearTimeout(this.poseWsReconnectTimer);
+                this.poseWsReconnectTimer = null;
+            }
             if (this.wsPingTimer) {
                 clearInterval(this.wsPingTimer);
                 this.wsPingTimer = null;
@@ -412,6 +421,14 @@ const map = {
                 this.ws.close();
                 this.ws = null;
             }
+            if (this.poseWs) {
+                this.poseWs.onopen = null;
+                this.poseWs.onmessage = null;
+                this.poseWs.onerror = null;
+                this.poseWs.onclose = null;
+                this.poseWs.close();
+                this.poseWs = null;
+            }
         },
 
         async loadInitialData() {
@@ -419,10 +436,18 @@ const map = {
             const agvResult = await this.fetchAgvs();
 
             this.mapConfig = this.normalizeMapData(mapData);
-            this.agvs = agvResult.data.map((item) => this.normalizeAgv(item));
-            this.agvDataMode = agvResult.mode;
-            this.connectionState = this.agvDataMode === 'simulation' ? 'simulation' : 'connecting';
-            variables.AGV_SHARED_STATE.publish(agvResult.data);
+            if (this.shouldUseRosPoseMode()) {
+                const rosAgv = this.buildRosPlaceholderAgv();
+                this.agvs = [rosAgv];
+                this.agvDataMode = 'ros_pose';
+                this.connectionState = 'connecting';
+                variables.AGV_SHARED_STATE.publish([rosAgv]);
+            } else {
+                this.agvs = agvResult.data.map((item) => this.normalizeAgv(item));
+                this.agvDataMode = agvResult.mode;
+                this.connectionState = this.agvDataMode === 'simulation' ? 'simulation' : 'connecting';
+                variables.AGV_SHARED_STATE.publish(agvResult.data);
+            }
             this.pathVisibility = {};
             this.pathData = {};
 
@@ -495,6 +520,31 @@ const map = {
 
         buildWsUrl() {
             return variables.WS_URL || 'ws://127.0.0.1:8000/ws';
+        },
+
+        buildRosPoseWsUrl() {
+            return variables.ROS_POSE_WS_URL || 'ws://192.168.0.100:8765/agv_pose';
+        },
+
+        shouldUseRosPoseMode() {
+            return variables.ROS_DIRECT_POSE_MODE !== false;
+        },
+
+        buildRosPlaceholderAgv() {
+            const agvId = Number(variables.ROS_PRIMARY_AGV_ID || 1);
+            return {
+                id: agvId,
+                name: 'AGV-' + String(agvId).padStart(3, '0'),
+                model: 'R550',
+                status: 'running',
+                battery: 100,
+                position_x: 0,
+                position_y: 0,
+                position_z: 0,
+                orientation: 0,
+                current_task_summary: 'ROS2 /odom 实时位姿',
+                speed: 0
+            };
         },
 
         normalizeMapData(data) {
@@ -1270,6 +1320,97 @@ const map = {
                 this.syncPathMeshes();
                 this.updateTime();
             }, 1000);
+        },
+
+        startRosPoseRealtime() {
+            this.connectionState = 'connecting';
+            let retryDelay = 1000;
+
+            const connect = () => {
+                try {
+                    this.poseWs = new WebSocket(this.buildRosPoseWsUrl());
+                } catch (error) {
+                    this.connectionState = 'reconnecting';
+                    this.poseWsReconnectTimer = setTimeout(() => {
+                        retryDelay = Math.min(retryDelay * 2, 30000);
+                        connect();
+                    }, retryDelay);
+                    return;
+                }
+
+                this.poseWs.onopen = () => {
+                    retryDelay = 1000;
+                    this.connectionState = 'ros_pose';
+                };
+
+                this.poseWs.onmessage = (event) => {
+                    try {
+                        const payload = JSON.parse(event.data);
+                        const pose = payload && payload.data ? payload.data : payload;
+                        this.applyRosPose(pose);
+                    } catch (error) {
+                        this.connectionState = 'reconnecting';
+                    }
+                };
+
+                this.poseWs.onerror = () => {
+                    this.connectionState = 'reconnecting';
+                };
+
+                this.poseWs.onclose = () => {
+                    this.connectionState = 'reconnecting';
+                    this.poseWsReconnectTimer = setTimeout(() => {
+                        retryDelay = Math.min(retryDelay * 2, 30000);
+                        connect();
+                    }, retryDelay);
+                };
+            };
+
+            connect();
+        },
+
+        applyRosPose(pose) {
+            if (!pose || typeof pose !== 'object') {
+                return;
+            }
+            const agvId = Number(pose.id || variables.ROS_PRIMARY_AGV_ID || 1);
+            const x = Number(pose.x != null ? pose.x : pose.position_x);
+            const y = Number(pose.y != null ? pose.y : pose.position_y);
+            const z = Number(pose.z != null ? pose.z : pose.position_z || 0);
+            const yawRad = Number(pose.yaw != null ? pose.yaw : pose.yaw_rad);
+            const orientation = Number.isFinite(yawRad)
+                ? Number((yawRad * 180 / Math.PI).toFixed(1))
+                : Number(pose.orientation || 0);
+            const speed = Number.isFinite(Number(pose.speed))
+                ? Number(pose.speed)
+                : Math.hypot(Number(pose.vx || 0), Number(pose.vy || 0));
+
+            const nextAgvs = this.agvs.slice();
+            const idx = nextAgvs.findIndex((item) => Number(item.id) === agvId);
+            const base = idx >= 0 ? nextAgvs[idx] : this.buildRosPlaceholderAgv();
+            const updated = {
+                ...base,
+                id: agvId,
+                status: pose.status || base.status || 'running',
+                position_x: Number.isFinite(x) ? Number(x.toFixed(3)) : base.position_x,
+                position_y: Number.isFinite(y) ? Number(y.toFixed(3)) : base.position_y,
+                position_z: Number.isFinite(z) ? Number(z.toFixed(3)) : base.position_z,
+                orientation,
+                speed: Number.isFinite(speed) ? Number(speed.toFixed(3)) : base.speed,
+                current_task_summary: 'ROS2 /odom 实时位姿'
+            };
+
+            if (idx >= 0) {
+                nextAgvs.splice(idx, 1, updated);
+            } else {
+                nextAgvs.push(updated);
+            }
+
+            this.agvs = nextAgvs;
+            variables.AGV_SHARED_STATE.publish(this.agvs);
+            this.syncAgvMeshes();
+            this.syncPathMeshes();
+            this.updateTime();
         },
 
         connectAgvStatus() {
